@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{rngs::ThreadRng, Rng};
 use std::io::{self, BufReader, Read};
 const START_ADDRESS: u16 = 0x200;
 struct Chip {
@@ -12,6 +12,7 @@ struct Chip {
     stack: [u16; 16],
     keyboard: [u16; 16],
     video: [u32; 64 * 32],
+    rng: ThreadRng,
 }
 
 impl Default for Chip {
@@ -27,6 +28,7 @@ impl Default for Chip {
             stack: [0; 16],
             keyboard: [0; 16],
             video: [0; 64 * 32],
+            rng: rand::thread_rng(),
         }
     }
 }
@@ -40,7 +42,7 @@ impl Chip {
         buffer
             .iter()
             .enumerate()
-            .for_each(|(idx, _)| self.memory[START_ADDRESS as usize + idx] = buffer[idx]);
+            .for_each(|(idx, &byte)| self.memory[START_ADDRESS as usize + idx] = byte);
         return Ok(());
     }
 
@@ -92,19 +94,39 @@ impl Chip {
             0x6000 => self.op_6xkk(vx, constant),
             0x7000 => self.op_7xkk(vx, constant),
             0x8000 => match opcode & 0x000F {
-                0x0000 => self.op_8xy1(vx, vy),
+                0x0000 => self.op_8xy0(vx, vy),
                 0x0001 => self.op_8xy1(vx, vy),
                 0x0002 => self.op_8xy2(vx, vy),
                 0x0003 => self.op_8xy3(vx, vy),
                 0x0004 => self.op_8xy4(vx, vy),
                 0x0005 => self.op_8xy5(vx, vy),
-                0x0006 => self.op_8xy6(vx, vy),
+                0x0006 => self.op_8xy6(vx),
                 0x0007 => self.op_8xy7(vx, vy),
-                0x000E => self.op_8xyE(vx, vy),
+                0x000E => self.op_8xye(vx),
                 _ => panic!("Unknown opcode: {:04x}", opcode),
             },
             0x9000 => self.op_9xy0(vx, vy),
-            0xA000 => self.op_Annn(nnn),
+            0xA000 => self.op_annn(nnn),
+            0xB000 => self.op_bnnn(nnn),
+            0xC000 => self.op_cxkk(vx, constant),
+            0xD000 => self.op_dxyn(vx, vy, n),
+            0xE000 => match opcode & 0x00FF {
+                0x009E => self.op_ex9e(vx),
+                0x00A1 => self.op_exa1(vx),
+                _ => panic!("Unknown opcode: {:04x}", opcode),
+            },
+            0xF000 => match opcode & 0x00FF {
+                0x0007 => self.op_fx07(vx),
+                0x000A => self.op_fx0a(vx),
+                0x0015 => self.op_fx15(vx),
+                0x0018 => self.op_fx18(vx),
+                0x001E => self.op_fx1e(vx),
+                0x0029 => self.op_fx29(vx),
+                0x0033 => self.op_fx33(vx),
+                0x0055 => self.op_fx55(vx),
+                0x0065 => self.op_fx65(vx),
+                _ => panic!("Unknown opcode: {:04x}", opcode),
+            },
 
             _ => panic!("Unknown opcode: {:04x}", opcode),
         }
@@ -188,9 +210,9 @@ impl Chip {
     }
 
     //  Set Vx = Vx SHR 1.
-    fn op_8xy6(&mut self, vx: usize, vy: usize) {
+    fn op_8xy6(&mut self, vx: usize) {
         self.general_purpose_reg[15] = self.general_purpose_reg[vx] & 0x01;
-        self.general_purpose_reg[vx] >>= 2;
+        self.general_purpose_reg[vx] >>= 1;
     }
     //  8xy7 - SUBN Vx, Vy
     fn op_8xy7(&mut self, vx: usize, vy: usize) {
@@ -204,9 +226,9 @@ impl Chip {
             self.general_purpose_reg[vy].wrapping_sub(self.general_purpose_reg[vx]);
     }
 
-    fn op_8xyE(&mut self, vx: usize, vy: usize) {
+    fn op_8xye(&mut self, vx: usize) {
         self.general_purpose_reg[15] = self.general_purpose_reg[vx] & 0x01;
-        self.general_purpose_reg[vx] <<= 2;
+        self.general_purpose_reg[vx] <<= 1;
     }
 
     fn op_9xy0(&mut self, vx: usize, vy: usize) {
@@ -215,17 +237,17 @@ impl Chip {
         }
     }
 
-    fn op_Annn(&mut self, nnn: u16) {
+    fn op_annn(&mut self, nnn: u16) {
         self.i_reg = nnn;
     }
-    fn op_Bnnn(&mut self, nnn: u16) {
+    fn op_bnnn(&mut self, nnn: u16) {
         self.program_counter = nnn + self.general_purpose_reg[0] as u16;
     }
-    fn op_Cxkk(&mut self, vx: usize, constant: u8) {
-        self.general_purpose_reg[vx] = rand_byte() & constant;
+    fn op_cxkk(&mut self, vx: usize, constant: u8) {
+        self.general_purpose_reg[vx] = rand_byte(&mut self.rng) & constant;
     }
 
-    fn op_Dxyn(&mut self, vx: usize, vy: usize, n: u8) {
+    fn op_dxyn(&mut self, vx: usize, vy: usize, n: u16) {
         let xpos = self.general_purpose_reg[vx] as usize;
         let ypos = self.general_purpose_reg[vy] as usize;
         self.general_purpose_reg[15] = 0;
@@ -239,6 +261,7 @@ impl Chip {
                 let sprite_pixel = (sprite_byte >> (7 - bit)) & 0x1;
                 let video_pos = y * 64 + x;
 
+                // collision
                 if sprite_pixel == 1 && self.video[video_pos] == 1 {
                     self.general_purpose_reg[15] = 1;
                 }
@@ -247,10 +270,77 @@ impl Chip {
             }
         }
     }
+    fn op_ex9e(&mut self, vx: usize) {
+        let key = self.general_purpose_reg[vx];
+        if self.keyboard[key as usize] == 1 {
+            self.program_counter += 2;
+        }
+    }
+
+    fn op_exa1(&mut self, vx: usize) {
+        let key = self.general_purpose_reg[vx];
+        if self.keyboard[key as usize] != 1 {
+            self.program_counter += 2;
+        }
+    }
+
+    fn op_fx07(&mut self, vx: usize) {
+        self.general_purpose_reg[vx] = self.delay_reg
+    }
+
+    fn op_fx0a(&mut self, vx: usize) {
+        let pressed_key: Option<usize> = self.keyboard.iter().position(|&x| x == 1);
+
+        match pressed_key {
+            Some(key) => {
+                self.general_purpose_reg[vx] = key as u8;
+            }
+            None => {
+                self.program_counter -= 2;
+            }
+        }
+    }
+
+    fn op_fx15(&mut self, vx: usize) {
+        self.delay_reg = self.general_purpose_reg[vx];
+    }
+    fn op_fx18(&mut self, vx: usize) {
+        self.audio_reg = self.general_purpose_reg[vx];
+    }
+    fn op_fx1e(&mut self, vx: usize) {
+        self.i_reg += self.general_purpose_reg[vx] as u16;
+    }
+    fn op_fx29(&mut self, vx: usize) {
+        let digit = self.general_purpose_reg[vx];
+        self.i_reg = 5 * digit as u16;
+    }
+    fn op_fx33(&mut self, vx: usize) {
+        let mut value = self.general_purpose_reg[vx];
+        // Ones-place
+        self.memory[self.i_reg as usize + 2] = value % 10;
+        value /= 10;
+
+        // Tens-place
+        self.memory[self.i_reg as usize + 1] = value % 10;
+        value /= 10;
+
+        // Hundreds-place
+        self.memory[self.i_reg as usize] = value % 10;
+    }
+    fn op_fx55(&mut self, vx: usize) {
+        for i in 0..=vx {
+            self.memory[self.i_reg as usize + i] = self.general_purpose_reg[i];
+        }
+    }
+
+    fn op_fx65(&mut self, vx: usize) {
+        for i in 0..=vx {
+            self.general_purpose_reg[i] = self.memory[self.i_reg as usize + i]
+        }
+    }
 }
 
-fn rand_byte() -> u8 {
-    let mut rng = rand::thread_rng();
+fn rand_byte(rng: &mut ThreadRng) -> u8 {
     let random = rng.gen_range(0..=255);
     return random;
 }
@@ -258,6 +348,5 @@ fn rand_byte() -> u8 {
 fn main() {
     let mut chip = Chip::default();
     let _ = chip.load_rom();
-    // chip.execute_opcode(0x00F0);
-    println!("{:?}", chip.memory);
+    // println!("{:?}", chip.memory);
 }
