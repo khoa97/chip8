@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::debug;
 use rand::{rngs::ThreadRng, Rng};
 use std::io::{self, BufReader, Read};
 const START_ADDRESS: u16 = 0x200;
@@ -236,56 +236,58 @@ impl Chip {
         self.general_purpose_reg[15] = if overflow { 1 } else { 0 };
     }
 
-    //  8xy5 - SUB Vx, Vy
+    // 8xy5 - SUB Vx, Vy
     fn op_8xy5(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[15] =
-            if self.general_purpose_reg[vx] > self.general_purpose_reg[vy] {
-                1
-            } else {
-                0
-            };
-        self.general_purpose_reg[vx] =
-            self.general_purpose_reg[vx].wrapping_sub(self.general_purpose_reg[vy]);
+        let vxval = self.general_purpose_reg[vx];
+        let vyval = self.general_purpose_reg[vy];
+        self.general_purpose_reg[vx] = vxval.wrapping_sub(vyval); // Do the subtraction first
+        self.general_purpose_reg[15] = if vxval > vyval { 1 } else { 0 }; // Then set vF
     }
 
-    //  Set Vx = Vx SHR 1.
+    // Set Vx = Vx SHR 1.
     fn op_8xy6(&mut self, vx: usize) {
-        self.general_purpose_reg[15] = self.general_purpose_reg[vx] & 0x01;
-        self.general_purpose_reg[vx] >>= 1;
+        let vxval = self.general_purpose_reg[vx];
+        self.general_purpose_reg[vx] = vxval >> 1;
+        self.general_purpose_reg[15] = vxval & 0x01;
     }
-    //  8xy7 - SUBN Vx, Vy
+
+    // 8xy7 - SUBN Vx, Vy
     fn op_8xy7(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[15] =
-            if self.general_purpose_reg[vy] > self.general_purpose_reg[vx] {
-                1
-            } else {
-                0
-            };
-        self.general_purpose_reg[vx] =
-            self.general_purpose_reg[vy].wrapping_sub(self.general_purpose_reg[vx]);
+        let vyval = self.general_purpose_reg[vy];
+        let vxval = self.general_purpose_reg[vx];
+        self.general_purpose_reg[vx] = vyval.wrapping_sub(vxval); // Do the subtraction first
+        self.general_purpose_reg[15] = if vyval > vxval { 1 } else { 0 }; // Then set vF
     }
 
+    // Set Vx = Vx SHL 1.
     fn op_8xye(&mut self, vx: usize) {
-        self.general_purpose_reg[15] = self.general_purpose_reg[vx] & 0x01;
-        self.general_purpose_reg[vx] <<= 1;
+        let vxval = self.general_purpose_reg[vx];
+        self.general_purpose_reg[vx] = vxval << 1;
+        self.general_purpose_reg[15] = (vxval & 0x80) >> 7;
     }
 
+    //  9xy0 - SNE Vx, Vy
     fn op_9xy0(&mut self, vx: usize, vy: usize) {
         if self.general_purpose_reg[vx] != self.general_purpose_reg[vy] {
             self.program_counter += 2;
         }
     }
-
+    // Set I = nnn.
     fn op_annn(&mut self, nnn: u16) {
         self.i_reg = nnn;
     }
+
+    //  Jump to location nnn + V0.
     fn op_bnnn(&mut self, nnn: u16) {
         self.program_counter = nnn + self.general_purpose_reg[0] as u16;
     }
+
+    // Set Vx = random byte AND kk.
     fn op_cxkk(&mut self, vx: usize, constant: u8) {
         self.general_purpose_reg[vx] = rand_byte(&mut self.rng) & constant;
     }
 
+    //  Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
     fn op_dxyn(&mut self, vx: usize, vy: usize, n: u16) {
         debug!("DRAWING TO CANVAS");
         let xpos = self.general_purpose_reg[vx] as usize;
@@ -311,6 +313,8 @@ impl Chip {
         }
         // debug!("{:?}", self.video)
     }
+
+    // Skip next instruction if key with the value of Vx is pressed.
     fn op_ex9e(&mut self, vx: usize) {
         let key = self.general_purpose_reg[vx];
         if self.keyboard[key as usize] == 1 {
@@ -318,6 +322,7 @@ impl Chip {
         }
     }
 
+    //  Skip next instruction if key with the value of Vx is not pressed.
     fn op_exa1(&mut self, vx: usize) {
         let key = self.general_purpose_reg[vx];
         if self.keyboard[key as usize] != 1 {
@@ -325,10 +330,12 @@ impl Chip {
         }
     }
 
+    //  Set Vx = delay timer value.
     fn op_fx07(&mut self, vx: usize) {
         self.general_purpose_reg[vx] = self.delay_reg
     }
 
+    //  Wait for a key press, store the value of the key in Vx.
     fn op_fx0a(&mut self, vx: usize) {
         let pressed_key: Option<usize> = self.keyboard.iter().position(|&x| x == 1);
 
@@ -342,19 +349,28 @@ impl Chip {
         }
     }
 
+    // Set delay timer = Vx.
     fn op_fx15(&mut self, vx: usize) {
         self.delay_reg = self.general_purpose_reg[vx];
     }
+
+    // Set sound timer = Vx.
     fn op_fx18(&mut self, vx: usize) {
         self.audio_reg = self.general_purpose_reg[vx];
     }
+
+    // Set I = I + Vx.
     fn op_fx1e(&mut self, vx: usize) {
         self.i_reg += self.general_purpose_reg[vx] as u16;
     }
+
+    //  Set I = location of sprite for digit Vx.
     fn op_fx29(&mut self, vx: usize) {
         let digit = self.general_purpose_reg[vx];
         self.i_reg = 5 * digit as u16;
     }
+
+    //  Store BCD representation of Vx in memory locations I, I+1, and I+2.
     fn op_fx33(&mut self, vx: usize) {
         let mut value = self.general_purpose_reg[vx];
         // Ones-place
@@ -368,12 +384,15 @@ impl Chip {
         // Hundreds-place
         self.memory[self.i_reg as usize] = value % 10;
     }
+
+    //  Store registers V0 through Vx in memory starting at location I.
     fn op_fx55(&mut self, vx: usize) {
         for i in 0..=vx {
             self.memory[self.i_reg as usize + i] = self.general_purpose_reg[i];
         }
     }
 
+    //  Read registers V0 through Vx from memory starting at location I.
     fn op_fx65(&mut self, vx: usize) {
         for i in 0..=vx {
             self.general_purpose_reg[i] = self.memory[self.i_reg as usize + i]

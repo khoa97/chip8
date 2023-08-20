@@ -72,7 +72,7 @@ fn main() {
     .unwrap_or_else(|e| {
         panic!("{}", e);
     });
-
+    // window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
     while window.is_open() && !window.is_key_down(Key::Escape) {
         // draw_number_1(&mut buffer, WIDTH);
         chip.cycle();
