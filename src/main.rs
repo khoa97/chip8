@@ -1,352 +1,103 @@
-use rand::{rngs::ThreadRng, Rng};
-use std::io::{self, BufReader, Read};
-const START_ADDRESS: u16 = 0x200;
-struct Chip {
-    memory: [u8; 4096], // 4kb
-    general_purpose_reg: [u8; 16],
-    i_reg: u16,
-    delay_reg: u8, // 8bit
-    audio_reg: u8,
-    program_counter: u16,
-    stack_pointer: u8,
-    stack: [u16; 16],
-    keyboard: [u16; 16],
-    video: [u32; 64 * 32],
-    rng: ThreadRng,
-}
+// use chip::Chip;
+// use minifb::{Key, Window, WindowOptions};
+// use simple_logger::SimpleLogger;
 
-impl Default for Chip {
-    fn default() -> Self {
-        Chip {
-            memory: Chip::init_memory(),
-            i_reg: 0,
-            general_purpose_reg: [0; 16],
-            delay_reg: 0,
-            audio_reg: 0,
-            program_counter: START_ADDRESS,
-            stack_pointer: 0,
-            stack: [0; 16],
-            keyboard: [0; 16],
-            video: [0; 64 * 32],
-            rng: rand::thread_rng(),
-        }
-    }
-}
-impl Chip {
-    fn load_rom(&mut self) -> io::Result<()> {
-        let file = std::fs::File::open("test_opcode.ch8")?;
-        let mut reader = BufReader::new(file);
-        let mut buffer = Vec::new();
-        reader.read_to_end(&mut buffer)?;
+// const CYCLES_PER_FRAME: usize = 10; // Adjust as needed
+// const FRAMES_PER_TIMER_DECREMENT: usize = 10; // At 600Hz, every 10 frames we decrement the timers
+// mod chip;
+// fn main() {
+//     SimpleLogger::new().init().unwrap();
 
-        buffer
-            .iter()
-            .enumerate()
-            .for_each(|(idx, &byte)| self.memory[START_ADDRESS as usize + idx] = byte);
-        return Ok(());
-    }
+//     let mut chip = Chip::default();
+//     let _ = chip.load_rom();
 
-    fn init_memory() -> [u8; 4096] {
-        let mut mem = [0; 4096];
-        let font_set = [
-            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-            0x20, 0x60, 0x20, 0x20, 0x70, // 1
-            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
-        ];
-        for i in 0..80 {
-            mem[i] = font_set[i]
-        }
-        return mem;
-    }
+//     let mut buffer = chip.video;
 
-    fn execute_opcode(&mut self, opcode: u16) {
-        let vx = ((opcode & 0x0F00) >> 8) as usize;
-        let vy = ((opcode & 0x00F0) >> 4) as usize;
-        let constant = (opcode & 0x00FF) as u8;
-        let nnn = opcode & 0x0FFF;
-        let n = opcode & 0x000F;
+//     let mut window = Window::new("Test - ESC to exit", 64, 32, WindowOptions::default())
+//         .unwrap_or_else(|e| {
+//             panic!("{}", e);
+//         });
 
-        // get the 4 significatn bits
-        match opcode & 0xF000 {
-            0x0000 => match opcode & 0x00FF {
-                0x00E0 => self.clear_display(),
-                0x00EE => self.ret(),
-                _ => panic!("Unknown opcode: {:04x}", opcode),
-            },
-            0x1000 => self.jmp_addr(),
-            0x2000 => self.call_addr(),
-            0x3000 => self.op_3xkk(vx, constant),
-            0x4000 => self.op_4xkk(vx, constant),
-            0x5000 => self.op_5xy0(vx, vy),
-            0x6000 => self.op_6xkk(vx, constant),
-            0x7000 => self.op_7xkk(vx, constant),
-            0x8000 => match opcode & 0x000F {
-                0x0000 => self.op_8xy0(vx, vy),
-                0x0001 => self.op_8xy1(vx, vy),
-                0x0002 => self.op_8xy2(vx, vy),
-                0x0003 => self.op_8xy3(vx, vy),
-                0x0004 => self.op_8xy4(vx, vy),
-                0x0005 => self.op_8xy5(vx, vy),
-                0x0006 => self.op_8xy6(vx),
-                0x0007 => self.op_8xy7(vx, vy),
-                0x000E => self.op_8xye(vx),
-                _ => panic!("Unknown opcode: {:04x}", opcode),
-            },
-            0x9000 => self.op_9xy0(vx, vy),
-            0xA000 => self.op_annn(nnn),
-            0xB000 => self.op_bnnn(nnn),
-            0xC000 => self.op_cxkk(vx, constant),
-            0xD000 => self.op_dxyn(vx, vy, n),
-            0xE000 => match opcode & 0x00FF {
-                0x009E => self.op_ex9e(vx),
-                0x00A1 => self.op_exa1(vx),
-                _ => panic!("Unknown opcode: {:04x}", opcode),
-            },
-            0xF000 => match opcode & 0x00FF {
-                0x0007 => self.op_fx07(vx),
-                0x000A => self.op_fx0a(vx),
-                0x0015 => self.op_fx15(vx),
-                0x0018 => self.op_fx18(vx),
-                0x001E => self.op_fx1e(vx),
-                0x0029 => self.op_fx29(vx),
-                0x0033 => self.op_fx33(vx),
-                0x0055 => self.op_fx55(vx),
-                0x0065 => self.op_fx65(vx),
-                _ => panic!("Unknown opcode: {:04x}", opcode),
-            },
+//     window.limit_update_rate(Some(std::time::Duration::from_micros(16000))); // Adjust for 60 FPS
 
-            _ => panic!("Unknown opcode: {:04x}", opcode),
-        }
-    }
+//     let mut frame_count = 0;
+//     while window.is_open() && !window.is_key_down(Key::Escape) {
+//         for _ in 0..CYCLES_PER_FRAME {
+//             chip.cycle();
+//         }
 
-    fn clear_display(&mut self) {
-        // ...
-    }
+//         // Decrement timers approximately at 60Hz
+//         // if frame_count % FRAMES_PER_TIMER_DECREMENT == 0 {
+//         //     chip.decrement_timers();
+//         // }
+//         println!("{:?}", chip.video);
+//         // Render
+//         buffer.copy_from_slice(&chip.video);
+//         window.update_with_buffer(&buffer, 64, 32).unwrap();
 
-    fn ret(&mut self) {
-        // ...
-    }
-    fn jmp_addr(&mut self) {}
-    fn call_addr(&mut self) {}
+//         frame_count += 1;
+//     }
+// }
+extern crate minifb;
+use chip::Chip;
+mod chip;
+use log::info;
+use minifb::{Key, Window, WindowOptions};
+use simple_logger::SimpleLogger;
 
-    //  Skip next instruction if Vx = kk.
-    fn op_3xkk(&mut self, vx: usize, constant: u8) {
-        if self.general_purpose_reg[vx] == constant {
-            self.program_counter += 2;
-        }
-    }
-    //  Skip next instruction if Vx != kk.
-    fn op_4xkk(&mut self, vx: usize, constant: u8) {
-        if self.general_purpose_reg[vx] != constant {
-            self.program_counter += 2;
-        }
-    }
-    //  Skip next instruction if Vx = Vy.
-    fn op_5xy0(&mut self, vx: usize, vy: usize) {
-        if self.general_purpose_reg[vx] == self.general_purpose_reg[vy] {
-            self.program_counter += 2;
-        }
-    }
-
-    //  Set Vx = kk.
-    fn op_6xkk(&mut self, vx: usize, constant: u8) {
-        self.general_purpose_reg[vx] = constant;
-    }
-
-    //   Set Vx = Vx + kk.
-    fn op_7xkk(&mut self, vx: usize, constant: u8) {
-        self.general_purpose_reg[vx] += constant
-    }
-
-    //    Set Vx = Vy.
-    fn op_8xy0(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[vx] = self.general_purpose_reg[vy]
-    }
-
-    //  Set Vx = Vx OR Vy.
-    fn op_8xy1(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[vx] = self.general_purpose_reg[vx] | self.general_purpose_reg[vy]
-    }
-
-    fn op_8xy2(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[vx] = self.general_purpose_reg[vx] & self.general_purpose_reg[vy]
-    }
-    //  Set Vx = Vx XOR Vy.
-    fn op_8xy3(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[vx] = self.general_purpose_reg[vx] ^ self.general_purpose_reg[vy]
-    }
-
-    //  8xy4 - ADD Vx, Vy
-    fn op_8xy4(&mut self, vx: usize, vy: usize) {
-        let (result, overflow) =
-            self.general_purpose_reg[vx].overflowing_add(self.general_purpose_reg[vy]);
-        self.general_purpose_reg[vx] = result;
-        self.general_purpose_reg[15] = if overflow { 1 } else { 0 };
-    }
-
-    //  8xy5 - SUB Vx, Vy
-    fn op_8xy5(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[15] =
-            if self.general_purpose_reg[vx] > self.general_purpose_reg[vy] {
-                1
-            } else {
-                0
-            };
-        self.general_purpose_reg[vx] =
-            self.general_purpose_reg[vx].wrapping_sub(self.general_purpose_reg[vy]);
-    }
-
-    //  Set Vx = Vx SHR 1.
-    fn op_8xy6(&mut self, vx: usize) {
-        self.general_purpose_reg[15] = self.general_purpose_reg[vx] & 0x01;
-        self.general_purpose_reg[vx] >>= 1;
-    }
-    //  8xy7 - SUBN Vx, Vy
-    fn op_8xy7(&mut self, vx: usize, vy: usize) {
-        self.general_purpose_reg[15] =
-            if self.general_purpose_reg[vy] > self.general_purpose_reg[vx] {
-                1
-            } else {
-                0
-            };
-        self.general_purpose_reg[vx] =
-            self.general_purpose_reg[vy].wrapping_sub(self.general_purpose_reg[vx]);
-    }
-
-    fn op_8xye(&mut self, vx: usize) {
-        self.general_purpose_reg[15] = self.general_purpose_reg[vx] & 0x01;
-        self.general_purpose_reg[vx] <<= 1;
-    }
-
-    fn op_9xy0(&mut self, vx: usize, vy: usize) {
-        if self.general_purpose_reg[vx] != self.general_purpose_reg[vy] {
-            self.program_counter += 2;
-        }
-    }
-
-    fn op_annn(&mut self, nnn: u16) {
-        self.i_reg = nnn;
-    }
-    fn op_bnnn(&mut self, nnn: u16) {
-        self.program_counter = nnn + self.general_purpose_reg[0] as u16;
-    }
-    fn op_cxkk(&mut self, vx: usize, constant: u8) {
-        self.general_purpose_reg[vx] = rand_byte(&mut self.rng) & constant;
-    }
-
-    fn op_dxyn(&mut self, vx: usize, vy: usize, n: u16) {
-        let xpos = self.general_purpose_reg[vx] as usize;
-        let ypos = self.general_purpose_reg[vy] as usize;
-        self.general_purpose_reg[15] = 0;
-
-        for byte in 0..n {
-            let y = (ypos + byte as usize) % 32;
-            let sprite_byte = self.memory[self.i_reg as usize + byte as usize];
-
-            for bit in 0..8 {
-                let x = (xpos + bit) % 64;
-                let sprite_pixel = (sprite_byte >> (7 - bit)) & 0x1;
-                let video_pos = y * 64 + x;
-
-                // collision
-                if sprite_pixel == 1 && self.video[video_pos] == 1 {
-                    self.general_purpose_reg[15] = 1;
-                }
-
-                self.video[video_pos] ^= sprite_pixel as u32;
-            }
-        }
-    }
-    fn op_ex9e(&mut self, vx: usize) {
-        let key = self.general_purpose_reg[vx];
-        if self.keyboard[key as usize] == 1 {
-            self.program_counter += 2;
-        }
-    }
-
-    fn op_exa1(&mut self, vx: usize) {
-        let key = self.general_purpose_reg[vx];
-        if self.keyboard[key as usize] != 1 {
-            self.program_counter += 2;
-        }
-    }
-
-    fn op_fx07(&mut self, vx: usize) {
-        self.general_purpose_reg[vx] = self.delay_reg
-    }
-
-    fn op_fx0a(&mut self, vx: usize) {
-        let pressed_key: Option<usize> = self.keyboard.iter().position(|&x| x == 1);
-
-        match pressed_key {
-            Some(key) => {
-                self.general_purpose_reg[vx] = key as u8;
-            }
-            None => {
-                self.program_counter -= 2;
-            }
-        }
-    }
-
-    fn op_fx15(&mut self, vx: usize) {
-        self.delay_reg = self.general_purpose_reg[vx];
-    }
-    fn op_fx18(&mut self, vx: usize) {
-        self.audio_reg = self.general_purpose_reg[vx];
-    }
-    fn op_fx1e(&mut self, vx: usize) {
-        self.i_reg += self.general_purpose_reg[vx] as u16;
-    }
-    fn op_fx29(&mut self, vx: usize) {
-        let digit = self.general_purpose_reg[vx];
-        self.i_reg = 5 * digit as u16;
-    }
-    fn op_fx33(&mut self, vx: usize) {
-        let mut value = self.general_purpose_reg[vx];
-        // Ones-place
-        self.memory[self.i_reg as usize + 2] = value % 10;
-        value /= 10;
-
-        // Tens-place
-        self.memory[self.i_reg as usize + 1] = value % 10;
-        value /= 10;
-
-        // Hundreds-place
-        self.memory[self.i_reg as usize] = value % 10;
-    }
-    fn op_fx55(&mut self, vx: usize) {
-        for i in 0..=vx {
-            self.memory[self.i_reg as usize + i] = self.general_purpose_reg[i];
-        }
-    }
-
-    fn op_fx65(&mut self, vx: usize) {
-        for i in 0..=vx {
-            self.general_purpose_reg[i] = self.memory[self.i_reg as usize + i]
-        }
-    }
-}
-
-fn rand_byte(rng: &mut ThreadRng) -> u8 {
-    let random = rng.gen_range(0..=255);
-    return random;
-}
+const WIDTH: usize = 64;
+const HEIGHT: usize = 32;
 
 fn main() {
+    SimpleLogger::new().init().unwrap();
+
     let mut chip = Chip::default();
     let _ = chip.load_rom();
-    // println!("{:?}", chip.memory);
+
+    // let mut buffer = chip.video;
+    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    println!("{:?}", buffer);
+    chip.cycle();
+    chip.cycle();
+    chip.cycle();
+    chip.cycle();
+    chip.cycle();
+    chip.cycle();
+    chip.cycle();
+    chip.cycle();
+    info!("{:?}", chip.video);
+
+    let mut window = Window::new(
+        "Render 1",
+        WIDTH,
+        HEIGHT,
+        WindowOptions {
+            resize: true,
+            ..WindowOptions::default()
+        },
+    )
+    .unwrap_or_else(|e| {
+        panic!("{}", e);
+    });
+
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        draw_number_1(&mut buffer, WIDTH);
+        window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+    }
+}
+
+fn draw_number_1(buffer: &mut [u32], width: usize) {
+    let mid_x = width / 2;
+    let start_y = 4;
+    let end_y = 28;
+
+    // Draw vertical line representing 1
+    for y in start_y..end_y {
+        buffer[y * width + mid_x] = 0xffffff;
+    }
+
+    // Optional: draw a small horizontal line at the top for styling the number "1"
+    for x in (mid_x - 3)..mid_x {
+        buffer[start_y * width + x] = 0xffffff;
+    }
 }
