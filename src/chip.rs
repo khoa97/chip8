@@ -1,4 +1,4 @@
-use log::info;
+use log::{debug, info};
 use rand::{rngs::ThreadRng, Rng};
 use std::io::{self, BufReader, Read};
 const START_ADDRESS: u16 = 0x200;
@@ -35,8 +35,8 @@ impl Default for Chip {
     }
 }
 impl Chip {
-    pub fn load_rom(&mut self) -> io::Result<()> {
-        let file = std::fs::File::open("1-chip8-logo.ch8")?;
+    pub fn load_rom(&mut self, file: &str) -> io::Result<()> {
+        let file = std::fs::File::open(file)?;
         // let file = std::fs::File::open("1-chip8-logo")?;
 
         let mut reader = BufReader::new(file);
@@ -52,12 +52,12 @@ impl Chip {
     }
 
     pub fn cycle(&mut self) {
-        info!("CURRENT PROGRAM COUNTER: 0x{:X}", self.program_counter);
+        debug!("CURRENT PROGRAM COUNTER: 0x{:X}", self.program_counter);
         // fetch
         let high = self.memory[self.program_counter as usize];
-        // info!("HIGH {:X}", high);
+        // debug!("HIGH {:X}", high);
         let low = self.memory[self.program_counter as usize + 1];
-        // info!("LOW {:?}", self.memory);
+        // debug!("LOW {:?}", self.memory);
         self.program_counter += 2;
 
         // decode
@@ -106,7 +106,7 @@ impl Chip {
         let nnn = opcode & 0x0FFF;
         let n = opcode & 0x000F;
 
-        info!("EXECUTING OP CODE {:X}", opcode);
+        debug!("EXECUTING OP CODE {:X}", opcode);
         // get the 4 significatn bits
         match opcode & 0xF000 {
             0x0000 => match opcode & 0x00FF {
@@ -161,7 +161,7 @@ impl Chip {
     }
 
     fn clear_display(&mut self) {
-        info!("Clearing the display...");
+        debug!("Clearing the display...");
         for pixel in self.video.iter_mut() {
             *pixel = 0;
         }
@@ -206,7 +206,8 @@ impl Chip {
 
     //   Set Vx = Vx + kk.
     fn op_7xkk(&mut self, vx: usize, constant: u8) {
-        self.general_purpose_reg[vx] += constant
+        let (result, _) = self.general_purpose_reg[vx].overflowing_add(constant);
+        self.general_purpose_reg[vx] = result;
     }
 
     //    Set Vx = Vy.
@@ -286,7 +287,7 @@ impl Chip {
     }
 
     fn op_dxyn(&mut self, vx: usize, vy: usize, n: u16) {
-        info!("DRAWING TO CANVAS");
+        debug!("DRAWING TO CANVAS");
         let xpos = self.general_purpose_reg[vx] as usize;
         let ypos = self.general_purpose_reg[vy] as usize;
         self.general_purpose_reg[15] = 0;
@@ -308,7 +309,7 @@ impl Chip {
                 self.video[video_pos] ^= sprite_pixel as u32;
             }
         }
-        // info!("{:?}", self.video)
+        // debug!("{:?}", self.video)
     }
     fn op_ex9e(&mut self, vx: usize) {
         let key = self.general_purpose_reg[vx];

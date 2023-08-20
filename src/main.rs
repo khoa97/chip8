@@ -39,9 +39,10 @@
 //     }
 // }
 extern crate minifb;
+
 use chip::Chip;
 mod chip;
-use log::info;
+use log::debug;
 use minifb::{Key, Window, WindowOptions};
 use simple_logger::SimpleLogger;
 
@@ -49,24 +50,16 @@ const WIDTH: usize = 64;
 const HEIGHT: usize = 32;
 
 fn main() {
-    SimpleLogger::new().init().unwrap();
-
+    // SimpleLogger::new().init().unwrap();
     let mut chip = Chip::default();
-    let _ = chip.load_rom();
-
-    // let mut buffer = chip.video;
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
-    println!("{:?}", buffer);
-    chip.cycle();
-    chip.cycle();
-    chip.cycle();
-    chip.cycle();
-    chip.cycle();
-    chip.cycle();
-    chip.cycle();
-    chip.cycle();
-    info!("{:?}", chip.video);
-
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() <= 1 {
+        let _ = chip.load_rom("1-chip8-logo.ch8");
+    } else {
+        let _ = chip.load_rom(&args[1]);
+    }
+    debug!("{:?}", chip.video);
+    print_instructions(&chip.memory);
     let mut window = Window::new(
         "Render 1",
         WIDTH,
@@ -81,23 +74,33 @@ fn main() {
     });
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        draw_number_1(&mut buffer, WIDTH);
-        window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+        // draw_number_1(&mut buffer, WIDTH);
+        chip.cycle();
+        draw(&mut chip.video);
+        window
+            .update_with_buffer(&chip.video, WIDTH, HEIGHT)
+            .unwrap();
     }
 }
 
-fn draw_number_1(buffer: &mut [u32], width: usize) {
-    let mid_x = width / 2;
-    let start_y = 4;
-    let end_y = 28;
-
-    // Draw vertical line representing 1
-    for y in start_y..end_y {
-        buffer[y * width + mid_x] = 0xffffff;
+fn draw(buffer: &mut [u32]) {
+    for value in buffer.iter_mut() {
+        if *value == 1 {
+            *value = 0xFFFFFF;
+        }
     }
+}
 
-    // Optional: draw a small horizontal line at the top for styling the number "1"
-    for x in (mid_x - 3)..mid_x {
-        buffer[start_y * width + x] = 0xffffff;
+fn print_instructions(memory: &[u8; 4096]) {
+    let start = 0x200;
+    for mut i in (start..memory.len()).step_by(2) {
+        let high = memory[i as usize];
+        let low = memory[i as usize + 1];
+        let opcode = ((high as u16) << 8) | (low as u16);
+
+        if opcode == 0x000 {
+            break;
+        }
+        println!("{:04x}", opcode);
     }
 }
