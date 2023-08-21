@@ -44,7 +44,7 @@ use chip::Chip;
 mod chip;
 use log::debug;
 use minifb::{Key, Window, WindowOptions};
-use simple_logger::SimpleLogger;
+// use simple_logger::SimpleLogger;
 
 const WIDTH: usize = 64;
 const HEIGHT: usize = 32;
@@ -59,13 +59,13 @@ fn main() {
         let _ = chip.load_rom(&args[1]);
     }
     debug!("{:?}", chip.video);
-    print_instructions(&chip.memory);
     let mut window = Window::new(
         "Render 1",
         WIDTH,
         HEIGHT,
         WindowOptions {
             resize: true,
+            scale: minifb::Scale::X16,
             ..WindowOptions::default()
         },
     )
@@ -83,27 +83,5 @@ fn main() {
             .collect();
 
         window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
-    }
-}
-
-// fn draw(buffer: &mut [u32]) {
-//     for value in buffer.iter_mut() {
-//         if *value == 1 {
-//             *value = 0xFFFFFF;
-//         }
-//     }
-// }
-
-fn print_instructions(memory: &[u8; 4096]) {
-    let start = 0x200;
-    for mut i in (start..memory.len()).step_by(2) {
-        let high = memory[i as usize];
-        let low = memory[i as usize + 1];
-        let opcode = ((high as u16) << 8) | (low as u16);
-
-        if opcode == 0x000 {
-            break;
-        }
-        println!("{:04x}", opcode);
     }
 }

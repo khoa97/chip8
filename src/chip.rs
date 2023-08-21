@@ -52,7 +52,6 @@ impl Chip {
     }
 
     pub fn cycle(&mut self) {
-        println!("hgere");
         // fetch
         let high = self.memory[self.program_counter as usize];
         // debug!("HIGH {:X}", high);
