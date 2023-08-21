@@ -52,7 +52,7 @@ impl Chip {
     }
 
     pub fn cycle(&mut self) {
-        debug!("CURRENT PROGRAM COUNTER: 0x{:X}", self.program_counter);
+        println!("hgere");
         // fetch
         let high = self.memory[self.program_counter as usize];
         // debug!("HIGH {:X}", high);
@@ -161,7 +161,7 @@ impl Chip {
     }
 
     fn clear_display(&mut self) {
-        debug!("Clearing the display...");
+        println!("clearing display");
         for pixel in self.video.iter_mut() {
             *pixel = 0;
         }

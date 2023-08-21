@@ -76,20 +76,23 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         // draw_number_1(&mut buffer, WIDTH);
         chip.cycle();
-        draw(&mut chip.video);
-        window
-            .update_with_buffer(&chip.video, WIDTH, HEIGHT)
-            .unwrap();
+        let buffer: Vec<u32> = chip
+            .video
+            .iter()
+            .map(|&pixel| if pixel == 1 { 0x00FF66 } else { 0x0 })
+            .collect();
+
+        window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
     }
 }
 
-fn draw(buffer: &mut [u32]) {
-    for value in buffer.iter_mut() {
-        if *value == 1 {
-            *value = 0xFFFFFF;
-        }
-    }
-}
+// fn draw(buffer: &mut [u32]) {
+//     for value in buffer.iter_mut() {
+//         if *value == 1 {
+//             *value = 0xFFFFFF;
+//         }
+//     }
+// }
 
 fn print_instructions(memory: &[u8; 4096]) {
     let start = 0x200;
