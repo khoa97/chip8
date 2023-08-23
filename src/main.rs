@@ -42,7 +42,6 @@ fn main() {
         for &key in &keys_pressed {
             if let Some(&chip_key) = chip8_key_map.get(&key) {
                 chip.keyboard[chip_key] = 1;
-                println!("PRESSED")
             }
         }
 

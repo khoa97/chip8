@@ -160,7 +160,6 @@ impl Chip {
     }
 
     fn clear_display(&mut self) {
-        println!("clearing display");
         for pixel in self.video.iter_mut() {
             *pixel = 0;
         }
@@ -355,7 +354,6 @@ impl Chip {
 
     // Set sound timer = Vx.
     fn op_fx18(&mut self, vx: usize) {
-        println!("SETTTING AUDIO REG TO {}", self.general_purpose_reg[vx]);
         self.audio_reg = self.general_purpose_reg[vx] + 16; // add 16 for some buffer
     }
 
