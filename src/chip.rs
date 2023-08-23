@@ -34,6 +34,7 @@ impl Default for Chip {
         }
     }
 }
+
 impl Chip {
     pub fn load_rom(&mut self, file: &str) -> io::Result<()> {
         let file = std::fs::File::open(file)?;
@@ -54,9 +55,8 @@ impl Chip {
     pub fn cycle(&mut self) {
         // fetch
         let high = self.memory[self.program_counter as usize];
-        // debug!("HIGH {:X}", high);
         let low = self.memory[self.program_counter as usize + 1];
-        // debug!("LOW {:?}", self.memory);
+
         self.program_counter += 2;
 
         // decode
@@ -355,7 +355,8 @@ impl Chip {
 
     // Set sound timer = Vx.
     fn op_fx18(&mut self, vx: usize) {
-        self.audio_reg = self.general_purpose_reg[vx];
+        println!("SETTTING AUDIO REG TO {}", self.general_purpose_reg[vx]);
+        self.audio_reg = self.general_purpose_reg[vx] + 16; // add 16 for some buffer
     }
 
     // Set I = I + Vx.

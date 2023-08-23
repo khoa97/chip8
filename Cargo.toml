@@ -9,5 +9,6 @@ edition = "2021"
 log = "0.4.20"
 minifb = "0.25.0"
 rand = "0.8.5"
+rodio = "0.17.1"
 simple_logger = "4.2.0"
 

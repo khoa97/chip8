@@ -1,48 +1,11 @@
-// use chip::Chip;
-// use minifb::{Key, Window, WindowOptions};
-// use simple_logger::SimpleLogger;
-
-// const CYCLES_PER_FRAME: usize = 10; // Adjust as needed
-// const FRAMES_PER_TIMER_DECREMENT: usize = 10; // At 600Hz, every 10 frames we decrement the timers
-// mod chip;
-// fn main() {
-//     SimpleLogger::new().init().unwrap();
-
-//     let mut chip = Chip::default();
-//     let _ = chip.load_rom();
-
-//     let mut buffer = chip.video;
-
-//     let mut window = Window::new("Test - ESC to exit", 64, 32, WindowOptions::default())
-//         .unwrap_or_else(|e| {
-//             panic!("{}", e);
-//         });
-
-//     window.limit_update_rate(Some(std::time::Duration::from_micros(16000))); // Adjust for 60 FPS
-
-//     let mut frame_count = 0;
-//     while window.is_open() && !window.is_key_down(Key::Escape) {
-//         for _ in 0..CYCLES_PER_FRAME {
-//             chip.cycle();
-//         }
-
-//         // Decrement timers approximately at 60Hz
-//         // if frame_count % FRAMES_PER_TIMER_DECREMENT == 0 {
-//         //     chip.decrement_timers();
-//         // }
-//         println!("{:?}", chip.video);
-//         // Render
-//         buffer.copy_from_slice(&chip.video);
-//         window.update_with_buffer(&buffer, 64, 32).unwrap();
-
-//         frame_count += 1;
-//     }
-// }
 extern crate minifb;
 
+use std::collections::HashMap;
+
+use audio::Audio;
 use chip::Chip;
+mod audio;
 mod chip;
-use log::debug;
 use minifb::{Key, Window, WindowOptions};
 // use simple_logger::SimpleLogger;
 
@@ -51,6 +14,7 @@ const HEIGHT: usize = 32;
 
 fn main() {
     // SimpleLogger::new().init().unwrap();
+    let audio = Audio::new();
     let mut chip = Chip::default();
     let args: Vec<String> = std::env::args().collect();
     if args.len() <= 1 {
@@ -58,7 +22,7 @@ fn main() {
     } else {
         let _ = chip.load_rom(&args[1]);
     }
-    debug!("{:?}", chip.video);
+
     let mut window = Window::new(
         "Render 1",
         WIDTH,
@@ -72,10 +36,32 @@ fn main() {
     .unwrap_or_else(|e| {
         panic!("{}", e);
     });
-    // window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    let chip8_key_map = get_chip8_key_map();
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        // draw_number_1(&mut buffer, WIDTH);
+        let keys_pressed = window.get_keys_pressed(minifb::KeyRepeat::Yes);
+        for &key in &keys_pressed {
+            if let Some(&chip_key) = chip8_key_map.get(&key) {
+                chip.keyboard[chip_key] = 1;
+                println!("PRESSED")
+            }
+        }
+
+        // Handle key releases
+        let keys_released = window.get_keys_released();
+        for &key in &keys_released {
+            if let Some(&chip_key) = chip8_key_map.get(&key) {
+                chip.keyboard[chip_key] = 0;
+            }
+        }
+
+        if chip.audio_reg > 0 {
+            audio.beep()
+        } else {
+            audio.stop()
+        }
+
         chip.cycle();
+
         let buffer: Vec<u32> = chip
             .video
             .iter()
@@ -84,4 +70,29 @@ fn main() {
 
         window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
     }
+}
+
+fn get_chip8_key_map() -> HashMap<Key, usize> {
+    use minifb::Key::*;
+    [
+        (Key1, 0x1),
+        (Key2, 0x2),
+        (Key3, 0x3),
+        (Key4, 0xC),
+        (Q, 0x4),
+        (W, 0x5),
+        (E, 0x6),
+        (R, 0xD),
+        (A, 0x7),
+        (S, 0x8),
+        (D, 0x9),
+        (F, 0xE),
+        (Z, 0xA),
+        (X, 0x0),
+        (C, 0xB),
+        (V, 0xF),
+    ]
+    .iter()
+    .cloned()
+    .collect()
 }
